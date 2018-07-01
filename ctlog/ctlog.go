@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
 	"strings"
 )
 
@@ -14,6 +13,7 @@ const (
 	levelWARN
 	levelERROR
 	levelFATAL
+	MaxLogSize int64 = 100 * 1024 * 1024
 )
 
 var (
@@ -21,22 +21,26 @@ var (
 )
 
 type logT struct {
-	logLevel int
-	logDir   string
-	userName string
-	f        *os.File
+	logLevel    int
+	logDir      string
+	logFilePath string
+	userName    string
+	f           *os.File
+	maxLogSize  int64
 }
 
 var ctlog = new(logT)
 
 func init() {
-	current, err := user.Current()
-	if err == nil {
-		ctlog.userName = current.Username
-	}
+	// set log out method
+	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Lshortfile)
 
-	// Sanitize userName since it may contain filepath separators on Windows.
-	ctlog.userName = strings.Replace(ctlog.userName, `\`, "_", -1)
+	// log out method
+	log.SetOutput(ctlog)
+
+	// set log remote size
+	ctlog.maxLogSize = MaxLogSize
+
 }
 
 func SetLogLevel(level string) {
@@ -68,14 +72,7 @@ func SetLogLevel(level string) {
 	}
 }
 
-func SetLogDir(logDir string) {
-	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Lshortfile)
-	log.SetOutput(ctlog)
-	if logDir == "" {
-		ctlog.logDir = "./"
-		ctlog.createLogFile()
-		return
-	}
+func SetLogDir(logDir, userName string) {
 	ctlog.logDir = logDir
-	ctlog.createLogFile()
+	ctlog.userName = userName + ".log"
 }

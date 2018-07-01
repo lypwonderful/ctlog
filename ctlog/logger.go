@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -49,10 +50,15 @@ func createLogDir() {
 	os.MkdirAll(ctlog.logDir, os.ModePerm)
 }
 
-func logFileName() (fileName, link string) {
+func (l *logT) logFileName() (link string) {
+	// set log file name,defauld pid
+	if l.userName == "" {
+		l.userName = strconv.Itoa(os.Getpid()) + ".log"
+	}
+
 	t := time.Now()
-	fileName = fmt.Sprintf("%s.log.%04d%02d%02d-%02d%02d%02d",
-		ctlog.userName,
+	fileName := fmt.Sprintf("%s.%04d%02d%02d-%02d%02d%02d.log",
+		l.userName,
 		t.Year(),
 		t.Month(),
 		t.Day(),
@@ -60,22 +66,23 @@ func logFileName() (fileName, link string) {
 		t.Minute(),
 		t.Second(),
 	)
-	return fileName, fileName + "-link"
+	return fileName
 }
 
 func (l *logT) createLogFile() (err error) {
-	createLogDirOnce.Do(createLogDir)
-	fileName, link := logFileName()
-	logFilePath := filepath.Join(ctlog.logDir, fileName)
-
-	l.f, err = os.Create(logFilePath)
-	if err == nil {
-		symlink := filepath.Join(ctlog.logDir, link)
-		os.Remove(symlink)            // ignore err
-		os.Symlink(fileName, symlink) // ignore err
-		return nil
+	if l.logDir == "" {
+		l.logDir = "../output"
 	}
-	return fmt.Errorf("Create Log File Fail: %v", err)
+	createLogDirOnce.Do(createLogDir)
+	l.logFilePath = filepath.Join(l.logDir, l.logFileName())
+	sysLink := filepath.Join(l.logDir, l.userName)
+	l.f, err = os.Create(l.logFilePath)
+	if err != nil {
+		return fmt.Errorf("Create Log File Fail: %v", err)
+	}
+	os.Remove(sysLink)
+	os.Symlink(l.logFilePath, sysLink)
+	return nil
 }
 
 func (l *logT) outPut(calldepth int, s string) error {
@@ -84,9 +91,22 @@ func (l *logT) outPut(calldepth int, s string) error {
 
 func (l *logT) Write(buf []byte) (n int, err error) {
 	if l.f == nil {
-		return len(buf), nil
+		l.createLogFile()
 	}
+	l.logRotation()
 	return l.f.Write(buf)
+}
+
+func (l *logT) logRotation() error {
+	logFileInfo, err := os.Stat(l.logFilePath)
+	if err != nil {
+		fmt.Errorf("logRotation,get file sixe error.%v\n", err)
+	}
+	if logFileInfo.Size() >= l.maxLogSize {
+		fmt.Println(logFileInfo.Size(), l.maxLogSize)
+		l.createLogFile()
+	}
+	return nil
 }
 
 func Test() {
